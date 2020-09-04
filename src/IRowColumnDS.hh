@@ -14,6 +14,7 @@ public:
     // ========================================
 
     bool computeCCS();
+ 
     /**
      * Method max
      */
@@ -23,6 +24,11 @@ public:
     int compress();
     bool computeCRS();
 
+    /*These four functions are added by Wali to get sorted row_ind*/
+    bool computeCRS_NEW();
+    int compress_NEW();
+    bool computeCCS_NEW();
+    void swap_row_ind();
 
     /**
      * Setter getter methods
@@ -78,7 +84,9 @@ protected:
     // or the deletion of the duplicate values happen.
 
     int *row_ind;
+    int *row_ind1;
     int *col_ind;
+    int *col_ind1;
     int *jpntr;
     int *ipntr;
     bool value;

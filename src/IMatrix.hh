@@ -8,7 +8,7 @@
 
 #include <vector>
 #include <bits/stdc++.h>
-#include <boost/dynamic_bitset.hpp>
+//#include <boost/dynamic_bitset.hpp>
 
 class IMatrix : public IRowColumnDS
 {
@@ -35,7 +35,15 @@ public:
     virtual int rlf(int *ngrp) = 0;
     virtual int exact(int UB,int *clique,int cliqueChoice,int tbChoice) = 0;
     virtual int slo_rlf(int *list, int *ngrp) = 0 ;	  
-    virtual void kellerman(int method) = 0;
+
+    virtual void ECC_edge(int method)=0;
+    virtual void find_neighbors(int v1, int *Neighbors_v1)=0;
+    virtual void print_list(int *A, int size)=0;
+    virtual void find_common_neighbors(int *Neighbors_v1,int *Neighbors_v2)=0;
+    virtual void getColInd(int i, int &j1, int &j2)=0;
+    virtual int  getRowInd(int j1, int j2)=0;
+    virtual int intersect(int j1l, int j1u, int j2l, int j2u)=0;
+
     void setVerify(bool v);
     bool getVerify();
 

@@ -12,7 +12,7 @@
 #include <cstdlib>
 #include <vector>
 #include <bits/stdc++.h>
-#include <boost/dynamic_bitset.hpp>
+//#include <boost/dynamic_bitset.hpp>
 #include <queue>
 
 #include "BucketPQ.hh"
@@ -39,6 +39,9 @@ Matrix::Matrix(int M,int N,int nz, bool value)
 {
     ndeg = new int[N+1];
     k=0;
+    order = new int[N+1];
+    deg_priority = new int[N+1];
+    Common_Neighbors = new int[N+1];
 }
 
 /**
@@ -46,8 +49,11 @@ Matrix::Matrix(int M,int N,int nz, bool value)
  */
 Matrix::~Matrix()
 {
-
   delete[] ndeg;
+
+  delete []order; 
+  delete []deg_priority;
+  delete []Common_Neighbors;
 }
 
 
@@ -128,6 +134,9 @@ bool Matrix::computedegree()
         }
         fout.close();
 	//cout<<"Rho_Max: "<<rho_max<<endl;	
+    //cout<<endl<<"ndeg(compute):";
+//    for(int i=1;i<=N;i++) cout<<ndeg[i]<<" ";
+//    cout<<endl;
     }
     
     catch(bad_alloc)
@@ -181,6 +190,7 @@ int Matrix::greedycolor(int *order, int *color)
                                 // the colors already used for adjacent columns
     int maxgrp = 0;
     int ic,ip,ir,j,jcol,jp;
+//    cout<<endl<<"inside gcolor"<<endl;
     try
     {
         tag = new int[N+1];       // working array of size n+1
@@ -223,6 +233,7 @@ int Matrix::greedycolor(int *order, int *color)
         //SEQ_L50:
             color[jcol] = jp;
         }
+//            cout<<endl<<"done gcolor"<<endl;
         delete[] tag;
         numberOfColors = maxgrp;
         return maxgrp;
@@ -234,276 +245,421 @@ int Matrix::greedycolor(int *order, int *color)
     }
 }
 
+/*
+ * Functions called by ECC_edge function
+*/
+
+/* 
+ *This function finds the deg_priority (position of the vertices according to their order)
+ * N is size of deg_priority.
+*/
+void Matrix::set_priority_vertices(){
+	int temp;
+	for(int i=1;i<=N;i++)
+	{
+		temp=order[i];
+		deg_priority[temp]=i;
+	}
+}
+void Matrix::print_graph()
+{
+    cout<<endl;
+    cout<<"M: "<<M<<" and N: "<<N<<endl;
+    for(int i=1;i<=M;i++)
+    {
+        int k = 2*i-1;
+        int j1 = col_ind[k];
+        int j2 = col_ind[k+1];
+        cout<<j1<<" "<<j2<<endl;
+    }
+}
+
+void Matrix::find_common_neighbors(int *Neighbors_v1,int *Neighbors_v2)
+{
+    int *temp;
+    temp = new int[N+1];
+    int i=1,j=1,pos=1;
+    while(i<=Neighbors_v1[0] && j<=Neighbors_v2[0])
+    {
+        if(Neighbors_v1[i]<Neighbors_v2[j])      i++;
+        else if(Neighbors_v1[i]>Neighbors_v2[j]) j++;
+        else if(Neighbors_v1[i]==Neighbors_v2[j])
+        {
+            temp[pos]=Neighbors_v1[i]; pos++;
+            i++; j++;
+        }
+    }
+    temp[0]=pos-1;
+
+    v_max_degree=temp[1];
+    pos=1;
+    while(pos<=temp[0])
+    {
+        if(deg_priority[v_max_degree]>deg_priority[temp[pos]]) v_max_degree=temp[pos];
+        Common_Neighbors[pos]=temp[pos];      
+        pos++;
+    }    
+    Common_Neighbors[0]=pos-1;
+
+    delete []temp;
+}
+
+void Matrix::find_neighbors(int v1, int *Neighbors_v1)
+{
+    int pos=1;
+    int jl = jpntr[v1];
+    int ju = jpntr[v1+1]-1;
+    for(int i=jl;i<=ju;i++)
+    {
+        int l = row_ind[i];
+        int k = 2*l-1;
+        int j1 = col_ind[k];
+        int j2 = col_ind[k+1];
+        if(j1!=v1)  Neighbors_v1[pos]=j1;
+        else        Neighbors_v1[pos]=j2;
+        pos++;
+    }
+    Neighbors_v1[0]=pos-1;
+
+}
+
+void Matrix::print_list(int *A, int size)
+{
+    cout<<endl;
+    for(int i=1;i<=size;i++)
+    {
+        cout<<A[i]<<" ";
+    }
+    cout<<endl;
+}
+
+
+void Matrix::getColInd(int i, int &j1, int &j2)
+{
+    int k = 2*i-1;
+    j1 = col_ind[k];
+    j2 = col_ind[k+1];
+}
+int  Matrix::getRowInd(int j1, int j2)
+{
+    int j1l = jpntr[j1];
+    int j1u = jpntr[j1+1]-1;
+    int j2l = jpntr[j2];
+    int j2u = jpntr[j2+1]-1;
+    return intersect(j1l, j1u, j2l, j2u);
+}
+int Matrix::intersect(int j1l, int j1u, int j2l, int j2u)
+{
+    while(j1l<=j1u && j2l<=j2u)
+    {
+        if(row_ind[j1l]<row_ind[j2l]) j1l++;
+        else if(row_ind[j1l]>row_ind[j2l]) j2l++;
+        else return row_ind[j1l];
+    }
+    return -1; // if there is no such row; return -1
+}
+
 
 /*
 *  Method:: 0=slo, 1=lfo, 2 = ido
 */
-void Matrix::kellerman(int method)
-{    
-	
-/*
-	k=M;     // trivial case: all edges are in their cliques
-	cout<<"\n Trivial Clique Cover"<<endl;
-	cout<<"Number of cliques: "<<k<<endl;
-	for(int ir=1; ir<=M; ir++)  // ir is a clique
-	{
-		cout<<"Clique ["<<ir<<"]: ";	
-		for(int ip = ipntr[ir]; ip<=ipntr[ir+1]-1; ip++)
-		{
-			cout<<col_ind[ip]<<"\t";
-		}
-		cout<<endl;
-	}
-*/
+void Matrix::ECC_edge(int method)
+{
+	cout<<endl<<"************************"<<endl;
+	cout      <<"Matrix::ECC_edge."<<endl; 
+	cout      <<"************************"<<endl;
 
-ColPack::Timer timer;
-timer.Start();
-	double CliqueCover_time = -1;
+//=====================================
+    /*Initializing count variables*/
+    int *Edge_Count;    // size = M
+    int *Vertex_Count;  // size = N
+    Edge_Count  = new int[M + 1];
+    Vertex_Count  = new int[N + 1];
+    for(int i=0; i <= M; i++)                  Edge_Count[i]=0;
+    for(int i=0; i <= N; i++)                  Vertex_Count[i]=0;
+
+//=====================================
+    /*Tracking time*/
+    ColPack::Timer timer;
+    timer.Start();
+    double CliqueCover_time = -1;
+//=====================================
+// local variables to implement Matrix B
+    int CurrentRow;
+    int B_jcol;
+    int *B_col_ind;     // size = 2*M
+    int *B_ipntr;       // size = (2*M)/Max_Clique + l ; l=0 for now
+    int *temp_clique;   // size = N
+
+    CurrentRow=1;
+    B_jcol=1;
+    //Max_Clique=1;       // member variable
+    temp_clique = new int[N + 1];
+    bool Find_Max_Clique = idoDsatur(order, temp_clique); // Max_Clique is set by calling this function
+    int len_B_ipntr = ((2*M)/Max_Clique) ; // According to sir, it should be {(2*M)/Max_Clique + l}; assume l=?
+        len_B_ipntr = M+1;    // For now we are taking size = M+1
+
+    int BCI_size = Max_Clique*M;        // According to sir, it should be (2*M); For now size=Max_Clique*M
+    B_col_ind   = new int[BCI_size + 1];   
+    B_ipntr     = new int[len_B_ipntr + 1];
+    //cout<<endl<<"Max_Clique: "<< Max_Clique <<" 2M/MaX: "<< (2*M)/Max_Clique <<endl;
+//=====================================
+    int *Neighbors_v1;
+    Neighbors_v1 = new int[N+1];
+    int *temp_Neighbors;
+    temp_Neighbors = new int[N+1]; 
+//=====================================
+
+	
+	/* Ordering the vertices... */
 	bool success = false;
+    
+    if     (method == 1) success = lfo(order);
+	else if(method == 2) {} // already ordered to get Max_Clique. success = ido(order);
+	else                 success = slo(order);
+    /*Finding the priority of vertices*/ //int *deg_priority; member of class    
+    set_priority_vertices();
+//=====================================
+// Initializing B_Col_Ind, B_ipntr and Edge_Count to zero
+    //for(int i=0; i<=(Max_Clique*M/2);i++)    B_col_ind[i]=0;  // Not required
+    //for(int i=0; i <= M; i++)                  Edge_Count[i]=0;
+    //for(int i=0; i<=len_B_ipntr; i++)        B_ipntr[i]=0;        // Not required
+//=====================================
+//    print_graph(); // pre-condition. Need to set deg_priority first
+//==================== ECC Algorithm starts here
+    //cout<<endl<<"Before checking edge/ entering the loop"<<endl;
+    k=0;// remove k later. just for checking
+    for(int i=1;i<=N;i++)
+    {
+        int V1=order[i];
+        find_neighbors(V1,temp_Neighbors);
+        
 
-	int *order;
-        order = new int[N+1];
-        if(method == 1) success = lfo(order);
-	else if(method == 2) success = ido(order);
-	else success = slo(order);
-	
-	
-/* // 	clique in DSJM
-
-	bool success1 = false;
-	int *clique1 = new int[N+1]();
-        success1 = slo_exact(order,clique1);
-	for(int i=1;i<=N;i++) cout<<clique1[i]<<" ";
-	delete[] clique1;
-	cout<<endl;
-
-*/
-	int *deg_priority;
-        deg_priority = new int[N+1];
-	int temp;
-//	cout<<"Ordered vertices: ";	
-	for(int i=1;i<=N;i++)
-	{
-		cout<<order[i]<<" ";
-		temp=order[i];
-		deg_priority[temp]=i;
-	}
-//	cout<<endl;
-
-
-/*    // Printing all neighbours of vertices
-	
-	cout<<"All neighbours"<<endl;
-	for (int seq = 1; seq <=  N ;seq++  )
+        int temp_Neighbors_size=temp_Neighbors[0];
+        for(int j=1;j<=temp_Neighbors_size;j++) // edges of vertex V1
         {
-            	int jcol = order[seq];						// Ordered vertices
-            	cout<<jcol<<endl; 
-            	for(int jp = jpntr[jcol]; jp<=jpntr[jcol+1]-1; jp++)
-	    	{
-			//cout<<row_ind[jp]<<"\t";
-			int ir=row_ind[jp];				 	// ir are the cliques where jcol is present
-			for(int ip = ipntr[ir]; ip<=ipntr[ir+1]-1; ip++)
-			{
-				int ic = col_ind[ip];
-				if(ic!=jcol) cout<<ic<<"\t";			// (ic!=jcol) is the neighbours of jcol
-			}
-		}
-		cout<<endl;
-        }
+            int V2=temp_Neighbors[j];   // {V1,V2} are edges. So these two for loops will continue atmost for N*d times
+                                        // But we will go for the clique cover with uncovered edges only. in worst case M times
+              
+            int edge = getRowInd(V1, V2);
+            if(Edge_Count[edge]==0 && V1!=V2) // Edge_Count[edge]=0 means that edge is not covered yet 
+            {
+                Edge_Count[edge]=1; // The edge is covered by the current clique
+                
+                find_neighbors(V2, Neighbors_v1);
+                find_common_neighbors(temp_Neighbors,Neighbors_v1);    
+                int temp_clique_size=0;
+                k++; // remove k later. just for checking
+                if(Common_Neighbors[0]==0) // the edge is a clique
+                {
+                    temp_clique[1]=V1;
+                    temp_clique[2]=V2;
+                    temp_clique_size=2;
+                    Vertex_Count[V1]=Vertex_Count[V1]+1;
+                    Vertex_Count[V2]=Vertex_Count[V2]+1;
+                }
+                else // there is a larger clique than trivial edge clique
+                {
+                    temp_clique[1]=V1;
+                    temp_clique[2]=V2;
+                    temp_clique_size=2; //size
+
+                    Vertex_Count[V1]=Vertex_Count[V1]+1;
+                    Vertex_Count[V2]=Vertex_Count[V2]+1;
+
+                    while(Common_Neighbors[0]!=0){
+/*
+                        print_list(Common_Neighbors, Common_Neighbors[0]);
+                        cout<<"V_max: "<<v_max_degree<<endl;
 */
+                        int V3=v_max_degree; // vertex v_max_degree has the highest degree from list common_neighbors 
+                        //int V3=Common_Neighbors[1];
+                        int status=1;
+                        for(int l=1; l <= temp_clique_size; l++)
+                        {
+                            int V_in_Clique = temp_clique[l];
+                            int ed = getRowInd(V_in_Clique, V3);
+                            Edge_Count[ed]=Edge_Count[ed]+1;
+                        }
+                        temp_clique_size=temp_clique_size+1;                
+                        temp_clique[temp_clique_size]=V3;
+                        Vertex_Count[V3]=Vertex_Count[V3]+1;
 
-	int** clique = new int*[M+1];
-	for(int i = 1; i <= M; ++i)
-    		clique[i] = new int[N+1];
-	k=0;	// clique size
-
-	int *w; // set of neighbour of vertex v
-       	w = new int[N+1];
-	int *U;
-	U = new int[M+1]; 
-
-	//**cout<<"Neighbours W[j<i] of Vi"<<endl;
-	for (int seq = 1; seq <=  N ;seq++  )
-        {
-            	int jcol = order[seq];						// Ordered vertices
-            	//**cout<<"Vi = "<<jcol<<": "<<endl; 
-		int size_w=0;
-            	for(int jp = jpntr[jcol]; jp<=jpntr[jcol+1]-1; jp++)
-	    	{
-			//**cout<<row_ind[jp]<<"\t";
-			int ir=row_ind[jp];				 	// ir are the cliques where jcol is present
-			for(int ip = ipntr[ir]; ip<=ipntr[ir+1]-1; ip++)
-			{
-				int ic = col_ind[ip];
-				if(ic!=jcol && deg_priority[ic]<deg_priority[jcol] ){ 
-					//**cout<<ic<<"\t";			// ic is such neighbour
-					size_w++;
-					w[size_w]=ic;
-				}
-			}
-		}
-		if(size_w==0)   // Case I: (No such neighbour)
-		{
-			k++;
-			clique[k][1]=jcol;
-			clique[k][0]=1;    // contains the top value
-		}
-		else 		// Case II: If jcol has such neighbours
-		{
-			//int *U; 		
-			//U = new int[N+1];     
-			//U[0]=0; 	// size of U
-					// Case II A: if there exist some cliques which is subset of W
-			int size_U=0;
-			for(int i=1;i<=k;i++)  
-			{    				
-				int size_clique=clique[i][0];
-				int isFound;
-				//size_U=0;
-				for(int j=1;j<=size_clique;j++)
-				{
-					isFound=0;
-					for(int mem=1;mem<=size_w; mem++)
-						if(clique[i][j]==w[mem]) isFound=1;
-					if(isFound==0) break;
-				}
-				if(isFound==1)	// clique[i][j] is a subset of w[mem]
-				{
-					clique[i][size_clique+1]=jcol;
-					size_clique=size_clique+1;
-					clique[i][0]=size_clique;
-					//size_U=U[0];
-					for(int j=1;j<=size_clique;j++)
-					{
-						size_U++;
-						U[size_U]=clique[i][j];
-					}
-					//U[0]=size_U;
-				}
-			}
-			// w=w\U
-			if(size_U>0)
-			{
-				for(int i=1;i<=size_w; i++)
-				{
-					for(int j=1;j<=size_U; j++)
-					{
-						if(w[i]==U[j])
-						{
-							w[i]=w[size_w];
-							size_w--;
-							i--;
-							break;
-						}
-					}
-				}
-			}
-			
-		// Case II A ends here
-
-		// Case II B starts from here.
-			int initial_k=k;
-			while(size_w>0)
-			{
-				int subset_size=0;
-				int max_clique=0;
-				int max_subset=0;
-				for(int i=1;i<=initial_k;i++)
-				{
-					int size_clique=clique[i][0];
-					subset_size=0;
-					for(int j=1;j<=size_clique;j++)
-					{
-						for(int mem=1;mem<=size_w; mem++)
-							if(clique[i][j]==w[mem]) 
-							{
-								subset_size++;
-							}
-					}
-					if(max_subset<subset_size)
-					{
-						max_subset=subset_size;
-						max_clique=i;
-					}
-				}
-//cout<<endl<<"jcol: "<<jcol<<"neigh"<< size_w<<"Max subset size"<< max_subset<<endl;
-				// creating new clique
-				k++;
-				clique[k][1]=jcol;
-				//clique[k][0]=1;
-				int pos=1;
-				int size_clique=clique[max_clique][0];
-				for(int i=1;i<=size_w; i++)
-				{
-					for(int j=1;j<=size_clique; j++)
-					{
-						if(w[i]==clique[max_clique][j])
-						{
-							//adding to new clique
-							pos=pos+1;
-							clique[k][pos]=w[i];
-							// removing from w
-							w[i]=w[size_w];
-							size_w--;
-							i--;
-							break;
-						}
-					}
-				}
-				clique[k][0]=pos;
-				
-			}
-
-		// Case II B ends here
-
-
-		}
-//**		cout<<endl;
-		/*** //printing neighbour set
-		cout<<"Vi = "<<jcol<<": "<<endl; 	
-		for(int i=1;i<=size_w;i++)
-			cout<<w[i]<<" ";
-		cout<<endl; 
-***/
+                        if(Common_Neighbors[0]==1) break;
+                        find_neighbors(V3, Neighbors_v1);
+                        find_common_neighbors(Common_Neighbors,Neighbors_v1);
+                    }
+                }
+                B_ipntr[CurrentRow]=B_jcol; CurrentRow++;
+                for(int l=1; l <= temp_clique_size ; l++)
+                {
+                    B_col_ind[B_jcol]=temp_clique[l];  B_jcol++;
+                }
+            }
         }
+    }
+    B_ipntr[CurrentRow]=B_jcol;
+    B_ipntr[0]=CurrentRow; // size of B_ipntr or we can use CurrentRow as the size of B_ipntr
+//cout<<endl<<"After the loop"<<endl;
+    //cout<<endl<< "CurrentRow: "<<CurrentRow <<endl;
+//==================== ECC Algorithm ends here
 
-	timer.Stop();
- 	CliqueCover_time = timer.GetWallTime();
+//==================== Identifying redundant cliques [Starts here]
+// Runtime is linear O(2M)
+    int *R;     // index of the redundant cliques.
+    R=new int [CurrentRow];
+    int pos=1;
+    int count_redundant=0;
+    //cout<<endl<<"Before checking redundant"<<endl;
+    for(int i=1;i<CurrentRow;i++)
+    {
+        int is_redundent=1;         // initaially we set it as redundant. If no, it will be updated to 0 
+        int start=B_ipntr[i];
+        int end=B_ipntr[i+1]-1;
+        for(int j=start; j<=end-1; j++)
+        {
+            for(int l=j+1; l<=end; l++)
+            {
+                // j,l // 
+                int index=getRowInd(B_col_ind[j], B_col_ind[l]);
+                if(Edge_Count[index]<=1)
+                { 
+                    is_redundent=0;
+                    break;
+                }
+            }
+            if(is_redundent==0) break;
+        }
+        if(is_redundent==1){
+            R[pos]=i; pos++;
+            count_redundant++;
+            int start=B_ipntr[i];
+            int end=B_ipntr[i+1]-1;
+            for(int j=start; j<=end-1; j++)
+            {
+                for(int l=j+1; l<=end; l++)
+                {
+                // j,l // 
+                    int index=getRowInd(B_col_ind[j], B_col_ind[l]);
+                    Edge_Count[index] = Edge_Count[index]-1;
+                }
+            }
+            //update Vertex_Count
+            for(int j=start; j<=end-1; j++)
+            {
+                int V=B_col_ind[j];
+                Vertex_Count[V]=Vertex_Count[V]-1;
+            }
+        }
+    }
+    R[0]=pos-1;
+    //cout<<endl<<"After checking redundant"<<endl;
+//==================== Identifying redundant cliques [Ends here]
 
-/***	//printing cliques
-	for(int i=1;i<=k;i++){
-		cout<<"Clique["<< i <<"]: ";
-		int size_clique=clique[i][0];
-		for(int j=1;j<=size_clique;j++)
-		{
-			cout<<clique[i][j]<<" ";
-		}
-		cout<<endl;
-	}
-***/
-	// counting cliques which civers edges, removing cliques of size 1
-	int k_cover=0;
-	for(int i=1;i<=k;i++){
-		if(clique[i][0]>1) k_cover++;
-	}
 
-// Printing... RESULTS
-	cout<<"Number of cliques: "<<k_cover<<endl;
-	cout<<"Runtime: "<< CliqueCover_time <<endl;
-//**************
+    timer.Stop();
+    CliqueCover_time = timer.GetWallTime();
 
-	//Clean up ******************
-	for(int i = 1; i <= M; ++i) {
-  		delete [] clique[i];
-	}
-	delete [] clique;
+//    cout<<endl<<"Number of Cliques: "<<k<<endl;
+//    cout<<endl<<"Number of redundant Cliques: "<<count_redundant<<endl;
+        cout<<endl<<"Final Number of Cliques: "<<k-count_redundant<<endl;
+    cout<<"Runtime: "<< CliqueCover_time <<endl;
 
-	delete []order;
-	delete []deg_priority;
-	delete []w;
-	delete []U;
-	/*****************************/
-}
+// to verify whether there is any uncovered edge...
+int not_covered_edge=0;
+for(int i=1; i <= M; i++)   if(Edge_Count[i]==0) not_covered_edge++;
+cout<<endl<<"Not covered edges: "<< not_covered_edge  <<endl;
+
+// Distributions (Clique, Edge, Vertex):::
+    int *dist;
+    dist=new int [N+1];
+    for(int i=1;i<=N;i++) dist[i]=0;
+    
+    for(int i=1;i<=k;i++)
+    {
+        int count= B_ipntr[i+1]-B_ipntr[i];
+        dist[count]=dist[count]+1;
+    }
+    // deductiong the count of redundant cliques
+    int R_size=R[0];
+    for(int j=1;j<=R_size;j++)
+    {
+        int i=R[j];
+        int count= B_ipntr[i+1]-B_ipntr[i];
+        dist[count]=dist[count]-1;
+    } 
+
+    cout<<endl<<"Clique distribution: \n";
+    for(int i=1;i<=N;i++)
+    {
+        if(dist[i]!=0) cout<<"["<<i<<","<<dist[i]<<"]";
+    }
+    cout<<endl;
+
+    int *dist_edge;
+    dist_edge=new int [M+1];
+    for(int i=1;i<=M;i++) dist_edge[i]=0;
+    for(int j=1;j<=M;j++)
+    {
+        int count=Edge_Count[j];
+        dist_edge[count]=dist_edge[count]+1;
+    }
+    cout<<endl<<"Edge distribution: \n";
+    int total_M=0;
+    for(int i=1; i <= M; i++)
+    {
+        if(dist_edge[i]!=0) 
+        {   
+            cout<<"["<<i<<","<<dist_edge[i]<<"]";
+            total_M=total_M+dist_edge[i];
+        }
+    }
+    cout<<endl;
+    if(M==total_M)  cout<<endl<<"Edge distribution is fine.";
+    else            cout<<endl<<"Problem in Edge distribution.";
+    cout<<endl;
+
+
+    int *dist_vertex;
+    dist_vertex=new int [M+1];
+    for(int i=0;i<=M;i++) dist_vertex[i]=0;
+    for(int j=1;j<=N;j++)
+    {
+        int count=Vertex_Count[j];
+        dist_vertex[count]=dist_vertex[count]+1;
+    }
+    cout<<endl<<"Vertex distribution: \n";
+    int total_N=0;
+    for(int i=0; i <= M; i++)
+    {
+        if(dist_vertex[i]!=0) 
+        {   
+            cout<<"["<<i<<","<<dist_vertex[i]<<"]";
+            total_N=total_N+dist_vertex[i];
+        }
+    }
+    cout<<endl;
+    if(N==total_N)  cout<<endl<<"Vertex distribution is fine.";
+    else            cout<<endl<<"Problem in Vertex distribution.";
+    cout<<endl;
+
+
+  
+    /* Deallocating memory*/ // some delete gives error!!! check why?
+    delete []Neighbors_v1;
+    delete []temp_Neighbors;
+    delete []temp_clique;
+    delete []B_ipntr;
+    delete []B_col_ind;
+    delete []Edge_Count;  
+    delete []dist;  
+    delete []R;
+    delete []dist_edge;
+    delete []Vertex_Count;
+    delete []dist_vertex;
+} 
+// end of ECC function
+
 
 /**
  * Purpose: 		Computes Smallest-Last Ordering (SLO) of the columns of a sparse matrix A (i.e. the vertices
@@ -673,6 +829,7 @@ bool Matrix::slo_exact(int *list, int *clique)
             {
                 maximalClique = numord;
                 cliqueflag = true;
+                Max_Clique=maximalClique;
                 //cout<<"Maximal Clique"<<maximalClique<<endl;
             }
 
@@ -858,6 +1015,7 @@ bool Matrix::idoDsatur(int *order, int *clique)
 			 {
 				maximalClique = ncomp;
 				cliqueflag = true;
+                Max_Clique=maximalClique;
 			 }
 			 
 		//cliqueflag = true;	
@@ -1960,11 +2118,26 @@ bool Matrix::lfo(int *order)
             head[jp-1] = 0 ; // We use degree as an index to find a column from
                              // the head list, which ranges from 0,..., n-1.
             maxdeg = max(maxdeg,ndeg[jp]);
+            //cout<<endl<<"Max Degree: "<<maxdeg<<endl;
         }
 
 
         // Initialize the Priority Queue
         buildPriorityQueue(N,ndeg,head,next,previous);
+        /*cout<<endl<<"ndeg: ";
+                for(int i=1;i<=N;i++) cout<<ndeg[i]<<" ";
+                cout<<endl;
+        cout<<endl<<"previous: ";
+                for(int i=1;i<=N;i++) cout<<previous[i]<<" ";
+                cout<<endl;
+        cout<<endl<<"head: ";
+                for(int i=1;i<=N;i++) cout<<head[i]<<" ";
+                cout<<endl;
+        cout<<endl<<"next: ";
+                for(int i=1;i<=N;i++) cout<<next[i]<<" ";
+                cout<<endl;
+        */
+
 
         int numord = 1;
         int jcol;
@@ -1978,9 +2151,13 @@ bool Matrix::lfo(int *order)
                     break;
                 maxdeg = maxdeg -1 ;
             }while(true);
+            //cout<<endl<<"maxdeg: "<<maxdeg<<" jcol: "<<jcol<<endl;
 
-            order[jcol] = numord;
+            //order[jcol] = numord; // it was wrong. Corrected by Wali
+            order[numord] = jcol;
             numord = numord +1;
+            //cout<<endl<<"numord: "<<numord<<endl;
+
 
             // Termination test.
             if (numord > N )
@@ -1988,6 +2165,12 @@ bool Matrix::lfo(int *order)
                 delete[] head;
                 delete[] next;
                 delete[] previous;
+
+                /*cout<<endl<<"order: ";
+                for(int i=1;i<=N;i++) cout<<order[i]<<" ";
+                cout<<endl;
+                */
+
                 return true;
             }
 
@@ -2908,9 +3091,9 @@ Matrix* Matrix::getSeedMatrix(int *ngrp)
         m->setIndColEntry(i,ngrp[i]);
     }
 
-    m->computeCCS();
-    int nnz = m->compress();
-    m->computeCRS();
+    m->computeCCS_NEW();
+    int nnz = m->compress_NEW();
+    m->computeCRS_NEW();
 
     return m;
 }

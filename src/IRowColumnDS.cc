@@ -26,6 +26,8 @@ IRowColumnDS::IRowColumnDS(int M, int N, int p_nz, bool p_value)
 {
     row_ind = new int[nz + 1];
     col_ind = new int[nz + 1];
+    row_ind1 = new int[nz + 1];
+    col_ind1 = new int[nz + 1];
     jpntr = new int[N + 2];
     ipntr = new int[M + 2];
     if(value)
@@ -41,6 +43,8 @@ IRowColumnDS::~IRowColumnDS()
 {
     delete[] row_ind;
     delete[] col_ind;
+    delete[] row_ind1;
+    delete[] col_ind1;
     delete[] jpntr;
     delete[] ipntr;
     if(value)
@@ -101,6 +105,7 @@ bool IRowColumnDS::computeCCS()
         }
 
         // Perform In Place Sort.
+       
         int k = 1;
         do
         {
@@ -117,6 +122,7 @@ bool IRowColumnDS::computeCCS()
                 // the displaced entry as the current element.
                 int l = tag[j]++;
                 int i = row_ind[k];
+
                 row_ind[k] = row_ind[l];
                 col_ind[k] = col_ind[l];
                 row_ind[l] = i;
@@ -140,6 +146,7 @@ bool IRowColumnDS::computeCCS()
     delete[] tag;
     return true;
 }
+
 
 /**
  * Method max
@@ -176,7 +183,6 @@ int IRowColumnDS::compress()
     try
     {
         tag = new int[M+1]; // Tag is a working array of size M+1.
-
 
         // Initialization of <id:tag> array.
         for (int i = 1; i <= M; i++)
@@ -299,6 +305,7 @@ bool IRowColumnDS::computeCRS()
     {
         tag = new int[M+1]; // Temporary working array of size N+1.
         int ir,jcol,jp;
+
 
         // Initialize the working array <id:w>
         for (int ir = 1; ir <=  M ;ir++  )
@@ -485,6 +492,7 @@ void IRowColumnDS::entry(int row, int col, double value)
 {
     setIndRowEntry(entry_index,row);
     setIndColEntry(entry_index,col);
+    
     if(this->value)
         x[entry_index] = value;
     entry_index++;
@@ -516,3 +524,170 @@ int IRowColumnDS::getN() const
 {
     return N;
 }
+
+
+/*The following functions are written by Wali to get sorted row_ind*/
+bool IRowColumnDS::computeCRS_NEW()
+{
+    int *tag;
+    try
+    {
+        for(int i=1;i<=nz;i++) 
+        {
+            row_ind1[i]=row_ind[i];
+            col_ind1[i]=col_ind[i];
+        }
+
+        tag = new int[M+1]; //  Temporary working array of size M+1.
+
+        for(int j=1; j <=M ; j++)
+        {
+            tag[j] = 0;
+        }
+
+        for(int k = 1; k <= nz; k++)
+        {
+            tag[row_ind1[k]] = tag[row_ind1[k]] + 1;
+        }
+
+        ipntr[1] = 1;
+        for(int j = 1 ; j <= M; j++)
+        {
+            ipntr[j+1] = ipntr[j] + tag[j];
+            tag[j] = ipntr[j];
+
+        }
+
+       
+        int k = 1;
+        do
+        {
+            int j = row_ind1[k];
+            if (k >= ipntr[j])
+            {
+                k = max(k+1,tag[j]);
+            }
+            else
+            {
+                int l = tag[j]++;
+                int i = col_ind1[k];
+
+                col_ind1[k] = col_ind1[l];
+                row_ind1[k] = row_ind1[l];
+                col_ind1[l] = i;
+                row_ind1[l] = j;
+            }
+
+        }while(k <=nz);
+    }
+    catch(std::bad_alloc)
+    {
+        std::cerr << "Memory Exhausted " << std::endl;
+        delete[] tag;
+        return false;
+    }
+    delete[] tag;
+    return true;
+}
+
+int IRowColumnDS::compress_NEW()
+{
+
+    int *tag;
+
+    try
+    {
+        tag = new int[N+1]; 
+
+        // Initialization of <id:tag> array.
+        for (int i = 1; i <= N; i++)
+        {
+            tag[i] = 0;
+        }
+
+        int nnz = 1;
+        int k;
+
+        for (int j = 1; j <= M; ++j)
+        {
+            k = nnz;
+            for (int ip = ipntr[j]; ip < ipntr[j + 1] ; ++ip)
+            {
+                int jcol = col_ind1[ip];
+                if (tag[jcol] != j)
+                {
+                    col_ind1[nnz] = jcol;
+                    tag[jcol] = j;
+                    ++nnz;
+                }
+            }
+            ipntr[j] = k;
+        }
+        ipntr[M + 1] = nnz;
+
+        // Clean up.
+        if(tag) delete[] tag;
+        this->nnz = nnz -1 ;
+        return nnz -1;
+    }
+    catch(std::bad_alloc)
+    {
+        if(tag) delete[] tag;
+        return 0;
+    }
+}
+
+bool IRowColumnDS::computeCCS_NEW()
+{
+    int *tag;
+    try
+    {
+        tag = new int[N+1]; // Temporary working array of size N+1.
+        int ir,jcol,jp,ip;
+
+        for (int jcol = 1; jcol <=  N ;jcol++  )
+        {
+            tag[jcol] = 0;
+        }
+
+        for (int ip = 1; ip <=  ipntr[M+1]-1 ;ip++  )
+        {
+            tag[col_ind1[ip]] = tag[col_ind1[ip]] + 1;
+        }
+
+
+        jpntr[1] = 1;
+        for (jcol = 1; jcol <=  N ;jcol++  )
+        {
+            jpntr[jcol+1] = jpntr[jcol] + tag[jcol];
+            tag[jcol] = jpntr[jcol];
+        }
+
+        for (ir = 1; ir <=  M ;ir++  )
+        {
+            for (ip = ipntr[ir]; ip <=  ipntr[ir+1]-1 ;ip++  )
+            {
+                jcol = col_ind1[ip];
+                row_ind1[tag[jcol]] = ir;
+                tag[jcol] = tag[jcol] + 1;
+            }
+        }
+
+    }
+    catch(std::bad_alloc)
+    {
+        if(tag) delete[] tag;
+        return false;
+    }
+    delete[] tag;
+    return true;
+}
+
+void IRowColumnDS::swap_row_ind()
+{
+    for(int i=1;i<=nz;i++)
+    {
+        row_ind[i]=row_ind1[i];
+    }
+}
+
